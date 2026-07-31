@@ -367,7 +367,7 @@
     <div class="xpbar"><div id="xpFill"></div></div>
     <div style="display:flex;gap:10px;padding:0 20px 16px;flex-wrap:wrap">
       <button class="btn" onclick="checkIn()">📅 Daily check-in</button>
-      <button class="btn" onclick="earnDemo()">🎴 Log a break</button>
+      <button class="btn" id="logBreak" onclick="earnDemo()">🎴 Log a break</button>
     </div>
   </div>
   <div class="sec-h">Rank Ladder<span class="ln"></span></div><div class="grid g7" id="ladder"></div>
@@ -400,6 +400,14 @@ const BRAND='TRAINER CLUB';
 ['brandTop','brandDash'].forEach(i=>document.getElementById(i).textContent=BRAND);
 document.title=BRAND+' · Research Terminal';
 
+// ===== BACKEND — paste your Apps Script /exec URL here to go LIVE =====
+const CONFIG={API_URL:''};
+const LIVE=()=>!!CONFIG.API_URL;
+async function apiGet(q){const r=await fetch(CONFIG.API_URL+'?'+q);return r.json();}
+async function apiPost(body){const r=await fetch(CONFIG.API_URL,{method:'POST',body:JSON.stringify(body)});return r.json();}
+function setFromTrainer(t){S={handle:t.handle,name:t.name,xp:t.xp,pts:t.points,streak:t.streak,badges:t.badges||[],entries:1,spinning:false};}
+function applyTrainer(t,prevXp){const prev=rankOf(prevXp).name;setFromTrainer(t);renderHero();renderLadder();renderRewards();renderLeaderboard();if(rankOf(t.xp).name!==prev)rankUp(rankOf(t.xp));}
+
 const RANKS=[{name:'Rookie',min:0,poke:25,icon:'⚡',color:'#c9d2f0'},{name:'Bronze',min:500,poke:133,icon:'🥉',color:'#e08b52'},{name:'Silver',min:1500,poke:94,icon:'🥈',color:'#cfd8e8'},{name:'Gold',min:3500,poke:130,icon:'🥇',color:'#ffcb3d'},{name:'Platinum',min:7000,poke:149,icon:'💎',color:'#7ff0e0'},{name:'Diamond',min:13000,poke:6,icon:'🔷',color:'#59a9ff'},{name:'Legend',min:25000,poke:150,icon:'👑',color:'#a56bff'}];
 const rankOf=xp=>{let r=RANKS[0];for(const R of RANKS)if(xp>=R.min)r=R;return r;};
 const nextOf=xp=>{for(const R of RANKS)if(R.min>xp)return R;return null;};
@@ -415,7 +423,7 @@ document.getElementById('rankList').innerHTML=RANKS.map((r,i)=>`<div class="rk $
 document.getElementById('recentRow').innerHTML=[133,94,384,448,149,6].map(id=>`<div class="c"><img src="${ART(id)}"></div>`).join('');
 
 let S={handle:'',name:'',xp:0,pts:0,streak:0,badges:[],entries:1,spinning:false};
-function login(demo){
+async function login(demo){
   const h=(demo||document.getElementById('handleInput').value||'').replace(/^@/,'').trim().toLowerCase();
   if(!h){toast('⚠️','Enter a trainer ID first');return;}
   const u=USERS[h]||{name:h,xp:0,streak:0,badges:[]};
@@ -424,6 +432,7 @@ function login(demo){
   const msgs=['> scanning trainer signature…','> cross-referencing dex registry…','> loading loyalty profile…','> ACCESS GRANTED'];
   let k=0;const t=document.getElementById('accessM');t.textContent=msgs[0];
   const iv=setInterval(()=>{k++;if(k<msgs.length){t.textContent=msgs[k];if(k===msgs.length-1)document.getElementById('accessT').textContent='WELCOME, '+S.name.toUpperCase();}},520);
+  if(LIVE()){try{const res=await apiGet('action=get&handle='+encodeURIComponent(h));if(res&&res.ok&&res.trainer){setFromTrainer(res.trainer);document.getElementById('accessT').textContent='WELCOME, '+S.name.toUpperCase();}}catch(err){toast('⚠️','Backend offline — showing demo data');}}
   setTimeout(()=>{clearInterval(iv);ac.classList.remove('show');document.getElementById('landing').style.display='none';document.getElementById('app').style.display='block';renderAll();window.scrollTo(0,0);},2250);
 }
 function logout(){document.getElementById('app').style.display='none';document.getElementById('landing').style.display='grid';}
@@ -442,14 +451,28 @@ function renderLadder(){const cur=rankOf(S.xp);document.getElementById('ladder')
 function renderRewards(){document.getElementById('rewards').innerHTML=REWARDS.map((rw,i)=>{const need=RANKS[rw.rank],gated=S.xp<need.min,afford=S.pts>=rw.cost;return `<div class="card rw ${gated?'gated':''}" style="--tp:${rw.tp}">${rw.crown?'<span class="crown">CROWN</span>':''}${gated?`<div class="mask">🔒<br>Unlocks at<br><b style="color:#fff">${need.name}</b></div>`:''}<div class="stripe"></div><div class="art"><img src="${ART(rw.poke)}"></div><div class="bd"><div class="nm">${rw.name}</div><div class="co">${rw.cost.toLocaleString()} pts</div><div class="ga">${need.name}+ req</div><button class="btn cy" style="margin-top:10px;font-size:11px" ${(gated||!afford)?'disabled':''} onclick="redeem(${i})">${gated?'LOCKED':(afford?'REDEEM':'NEED PTS')}</button></div></div>`;}).join('');}
 function renderBadges(){document.getElementById('badges').innerHTML=BADGES.map(b=>{const e=S.badges.includes(b.id);return `<div class="card gb ${e?'earn':'lock'}">${badgeSVG(b.id)}<div class="bn">${b.n}</div></div>`;}).join('');}
 function renderWheel(){const n=WHEEL.length,seg=360/n,w=document.getElementById('wheel');w.style.background=`conic-gradient(${WHEEL.map((x,i)=>`${x.c} ${i*seg}deg ${(i+1)*seg}deg`).join(',')})`;w.innerHTML=WHEEL.map((x,i)=>`<div class="seg" style="transform:rotate(${i*seg+seg/2}deg)"><span>${x.t}</span></div>`).join('');}
-function renderLeaderboard(){document.getElementById('lb').innerHTML=LEADERS.map((l,i)=>{const me=l.h===S.handle;return `<div class="row ${me?'me':''}"><span class="pos ${i<3?'top':''}">${i+1}</span><img class="av" src="${ART(l.poke)}"><div><div class="nm">${l.name}${me?' · you':''}</div><div class="rk">@${l.h} · ${rankOf(l.xp).name}</div></div><span class="xp">${l.xp.toLocaleString()}</span></div>`;}).join('');}
+async function renderLeaderboard(){
+  let list=LEADERS.map(l=>({h:l.h,name:l.name,xp:l.xp,poke:l.poke}));
+  if(LIVE()){try{const res=await apiGet('action=leaderboard');if(res.ok&&res.leaders&&res.leaders.length)list=res.leaders.map(l=>({h:l.handle,name:l.name,xp:l.xp,poke:rankOf(l.xp).poke}));}catch(e){}}
+  document.getElementById('lb').innerHTML=list.map((l,i)=>{const me=l.h===S.handle;return `<div class="row ${me?'me':''}"><span class="pos ${i<3?'top':''}">${i+1}</span><img class="av" src="${ART(l.poke)}"><div><div class="nm">${l.name}${me?' · you':''}</div><div class="rk">@${l.h} · ${rankOf(l.xp).name}</div></div><span class="xp">${l.xp.toLocaleString()}</span></div>`;}).join('');}
 function grantXP(x,p){const b=rankOf(S.xp).name;S.xp+=x;if(p)S.pts+=p;const a=rankOf(S.xp);renderHero();renderLadder();renderRewards();renderLeaderboard();if(a.name!==b)rankUp(a);}
-function checkIn(){S.streak++;grantXP(50,50);toast('📅','Checked in! +50 XP · '+S.streak+'d streak');}
-function earnDemo(){const g=200+Math.floor(Math.random()*400);grantXP(g,g);toast('🎴','Break logged! +'+g+' XP · +'+g+' pts');}
-function redeem(i){const rw=REWARDS[i];if(S.pts<rw.cost){toast('⚠️','Not enough points');return;}S.pts-=rw.cost;renderHero();renderRewards();confetti();toast('🎁','Redeemed '+rw.name+'!');}
+async function checkIn(){
+  if(LIVE()){const prev=S.xp;const res=await apiPost({action:'checkin',handle:S.handle,name:S.name});if(res.ok){applyTrainer(res.trainer,prev);toast('📅','Checked in! +50 XP · '+S.streak+'d streak');}else toast('⚠️',res.error||'Already checked in today');return;}
+  S.streak++;grantXP(50,50);toast('📅','Checked in! +50 XP · '+S.streak+'d streak');
+}
+function earnDemo(){const g=200+Math.floor(Math.random()*400);grantXP(g,g);toast('🎴','Break logged! +'+g+' XP · +'+g+' pts (demo — real points come from your CSV import)');}
+async function redeem(i){const rw=REWARDS[i];
+  if(LIVE()){const prev=S.xp;const res=await apiPost({action:'redeem',handle:S.handle,reward:rw.name,cost:rw.cost});if(res.ok){applyTrainer(res.trainer,prev);confetti();toast('🎁','Redeemed '+rw.name+'! Logged for you to fulfill.');}else toast('⚠️','Not enough points');return;}
+  if(S.pts<rw.cost){toast('⚠️','Not enough points');return;}S.pts-=rw.cost;renderHero();renderRewards();confetti();toast('🎁','Redeemed '+rw.name+'!');}
 function rankUp(r){document.getElementById('modalTitle').textContent=r.name;document.getElementById('modalPoke').src=ART(r.poke);document.getElementById('modalHex').style.cssText=`background:${gl(r)};--gl:${r.color}`;document.getElementById('modalIco').textContent=r.icon;document.getElementById('modalMsg').textContent='You evolved to '+r.name+' rank. New rewards unlocked.';document.getElementById('modal').classList.add('show');confetti();}
 let wheelRot=0;
-function spin(){if(S.spinning)return;if(S.pts<150){toast('⚠️','Need 150 pts');return;}S.spinning=true;S.pts-=150;renderHero();const b=document.getElementById('spinBtn');b.disabled=true;const n=WHEEL.length,seg=360/n,idx=Math.floor(Math.random()*n);wheelRot+=360*6+(360-(idx*seg+seg/2))+(Math.random()*seg*.5-seg*.25);document.getElementById('wheel').style.transform=`rotate(${wheelRot}deg)`;setTimeout(()=>{const r=WHEEL[idx];S.spinning=false;b.disabled=false;if(r.pts>0){grantXP(0,r.pts);toast('🎉','Landed '+r.t+' — +'+r.pts+' pts!');confetti();}else if(r.prize){toast('🌟','You won '+r.prize+'!');confetti();}else toast('💨','Busted! Spin again?');},4750);}
+function spin(){if(S.spinning)return;if(S.pts<150){toast('⚠️','Need 150 pts');return;}S.spinning=true;const b=document.getElementById('spinBtn');b.disabled=true;
+  if(!LIVE()){S.pts-=150;renderHero();}
+  const n=WHEEL.length,seg=360/n,idx=Math.floor(Math.random()*n);wheelRot+=360*6+(360-(idx*seg+seg/2))+(Math.random()*seg*.5-seg*.25);document.getElementById('wheel').style.transform=`rotate(${wheelRot}deg)`;
+  setTimeout(()=>{const r=WHEEL[idx];S.spinning=false;b.disabled=false;
+    if(LIVE()){const net=(r.pts||0)-150;apiPost({action:'adjust',handle:S.handle,dpts:net,dxp:0,reason:'spin '+r.t}).then(res=>{if(res.ok){setFromTrainer(res.trainer);renderHero();renderRewards();renderLeaderboard();}});
+      if(r.pts>0){toast('🎉','Landed '+r.t+' — +'+r.pts+' pts!');confetti();}else if(r.prize){toast('🌟','You won '+r.prize+'!');confetti();}else toast('💨','Busted! Spin again?');return;}
+    if(r.pts>0){grantXP(0,r.pts);toast('🎉','Landed '+r.t+' — +'+r.pts+' pts!');confetti();}else if(r.prize){toast('🌟','You won '+r.prize+'!');confetti();}else toast('💨','Busted! Spin again?');},4750);}
 let toastT;function toast(icon,msg){const t=document.getElementById('toast');t.innerHTML=`<span style="font-size:18px">${icon}</span> ${msg}`;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),3200);}
 const fx=document.getElementById('fx'),fxc=fx.getContext('2d');let parts=[];function rsz(){fx.width=innerWidth;fx.height=innerHeight;}rsz();addEventListener('resize',rsz);
 function confetti(){const c=['#38e1ff','#ffce4d','#ff3b4e','#41e58c','#a56bff','#fff'];for(let i=0;i<130;i++)parts.push({x:innerWidth/2,y:innerHeight/2,vx:(Math.random()-.5)*16,vy:(Math.random()-.9)*16,g:.35,s:4+Math.random()*6,c:c[i%c.length],r:Math.random()*6,vr:(Math.random()-.5)*.5,life:1});}
@@ -458,6 +481,8 @@ function loop(){fxc.clearRect(0,0,fx.width,fx.height);parts=parts.filter(p=>p.li
 const pc=document.getElementById('particles'),pcx=pc.getContext('2d');let dots=[];function rp(){pc.width=innerWidth;pc.height=innerHeight;dots=Array.from({length:80},()=>({x:Math.random()*pc.width,y:Math.random()*pc.height,r:Math.random()*1.7+.3,a:Math.random(),va:(Math.random()-.5)*.02,vy:Math.random()*.2+.03}));}rp();addEventListener('resize',rp);
 function ploop(){pcx.clearRect(0,0,pc.width,pc.height);dots.forEach(d=>{d.y-=d.vy;d.a+=d.va;if(d.a<0||d.a>1)d.va*=-1;if(d.y<0){d.y=pc.height;d.x=Math.random()*pc.width;}pcx.globalAlpha=Math.abs(d.a)*.6;pcx.fillStyle='#7fd0ff';pcx.beginPath();pcx.arc(d.x,d.y,d.r,0,7);pcx.fill();});requestAnimationFrame(ploop);}ploop();
 document.getElementById('handleInput').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+// in LIVE mode, hide the demo-only "Log a break" button (real points come from the CSV import)
+if(LIVE()){const lb=document.getElementById('logBreak');if(lb)lb.style.display='none';}
 </script>
 </body>
 </html>
